@@ -16,6 +16,9 @@ class AmazonBookScraping
   #== シークレットキー
   attr_reader :secret_key
 
+  #== 言語
+  attr_reader :country
+
   #== エラー時の再試行回数
   MAX_RETRY = 10
 
@@ -25,10 +28,11 @@ class AmazonBookScraping
   #
   #= 初期化
   #
-  def initialize(assosiate_tag, access_key, secret_key)
+  def initialize(assosiate_tag, access_key, secret_key, country = 'jp')
     @assosiate_tag = assosiate_tag
     @access_key = access_key
     @secret_key = secret_key
+    @country = country
 
     configure
   end
@@ -41,6 +45,7 @@ class AmazonBookScraping
       options[:associate_tag] = @assosiate_tag
       options[:AWS_access_key_id] = @access_key
       options[:AWS_secret_key] = @secret_key
+      options[:country] = @country
     end
   end
 
@@ -48,7 +53,7 @@ class AmazonBookScraping
   #= クエリに対する総ページ数（APIの制限から最大10ページ）
   #
   def total_pages(query)
-    resp = Amazon::Ecs.item_search(query, :item_page => 1, :country => "jp")
+    resp = Amazon::Ecs.item_search(query, :item_page => 1)
     #puts resp.marshal_dump
     pages = resp.total_pages.to_i
     pages = 10 if pages > 10
@@ -70,8 +75,8 @@ class AmazonBookScraping
       retry_count = 0
       puts "page: " + page.to_s
       begin
-        resp = Amazon::Ecs.item_search(query, :item_page => page, :country => "jp")
-        # p resp
+        resp = Amazon::Ecs.item_search(query, {:item_page => page})
+        # puts resp.marshal_dump
       # 立て続けにたくさんのデータを取ってきていると、APIの制限に引っかかってエラーを出すことがある。
       # その場合にはしばらく待って、再度実行する
       rescue Amazon::RequestError => e
@@ -86,14 +91,16 @@ class AmazonBookScraping
         end
       end
       resp.items.each do |item|
-        result.push(item.get("ASIN"))
-        #puts item.get("ItemAttributes/Title")
-        #puts item.get("ItemAttributes/Manufacturer")
-        #puts item.get("ItemAttributes/ProductGroup")
-        #puts item.get("ItemAttributes/Author")
+        # result.push(item.get("ASIN"))
+        # puts item.get("ItemAttributes/Title")
+        # puts item.get("ItemAttributes/Manufacturer")
+        # puts item.get("ItemAttributes/ProductGroup")
+        # puts item.get("ItemAttributes/Author")
         # puts item.get_element("Author")
       end
     end
     result
   end
+
+
 end
