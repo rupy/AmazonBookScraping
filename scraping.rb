@@ -91,7 +91,7 @@ class AmazonBookScraping
         end
       end
       resp.items.each do |item|
-        # result.push(item.get("ASIN"))
+        result.push(item.get("ASIN"))
         # puts item.get("ItemAttributes/Title")
         # puts item.get("ItemAttributes/Manufacturer")
         # puts item.get("ItemAttributes/ProductGroup")
@@ -101,6 +101,15 @@ class AmazonBookScraping
     end
     result
   end
-
+  
+  #
+  #= browsenodeを取得
+  #
+  def get_browsenode(node_id)
+    options = {}
+    options[:ResponseGroup] = :TopSellers
+    resp = Amazon::Ecs.browse_node_lookup(node_id, options)
+    puts resp.marshal_dump
+  end
 
 end
