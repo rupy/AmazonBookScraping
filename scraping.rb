@@ -158,7 +158,7 @@ class AmazonBookScraping
 
       retry_count = 0
       begin
-        res = Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
+        resp = Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
       rescue Amazon::RequestError => e
         if /503/ =~ e.message && retry_count < MAX_RETRY
           puts e.message
@@ -170,9 +170,8 @@ class AmazonBookScraping
         end
       end
 
-
       # puts res.marshal_dump
-      res.items.each do |item|
+      resp.items.each do |item|
         puts title = item.get("ItemAttributes/Title")
         asin = item.get("ASIN")
         result.push({:asin => asin, :title => title})
@@ -181,6 +180,32 @@ class AmazonBookScraping
     end
     result
 
+  end
+
+  #
+  #= asin(isbn)から情報を取得する
+  #
+  def get_iteminfo_by_asin(asin)
+    title = ""
+    retry_count = 0
+    begin
+      resp = Amazon::Ecs.item_lookup(asin.to_s, :response_group => 'Small, ItemAttributes, Images')
+    rescue Amazon::RequestError => e
+      p e
+      if /503/ =~ e.message && retry_count < MAX_RETRY
+        puts e.message
+        puts "retry_count:" + retry_count.to_s
+        sleep(RETRY_TIME * retry_count)
+        retry_count += 1
+        retry
+      else
+      end
+    end
+    puts resp.marshal_dump
+    resp.items.each do |item|
+      puts title = item.get("ItemAttributes/Title")
+    end
+    return title
   end
 
 end
