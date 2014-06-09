@@ -101,15 +101,34 @@ class AmazonBookScraping
     end
     result
   end
-  
+
   #
   #= browsenodeを取得
   #
   def get_browsenode(node_id)
     options = {}
+    # デフォルト値: BrowseNodeInfo
+    # 有効な値: MostGifted | NewReleases | MostWishedFor | TopSellers
     options[:ResponseGroup] = :TopSellers
     resp = Amazon::Ecs.browse_node_lookup(node_id, options)
     puts resp.marshal_dump
   end
 
+  #
+  #= BrowseNodeInfoを取得
+  #
+  def get_browsenode_info(node_id)
+    options = {}
+    # デフォルト値: BrowseNodeInfo
+    # 有効な値: MostGifted | NewReleases | MostWishedFor | TopSellers
+    resp = Amazon::Ecs.browse_node_lookup(node_id, options)
+    browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
+    name = browsenode.xpath("Name")
+    puts "Node: " + name.text
+    children = browsenode.xpath("Children")
+    children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
+      puts child_id.text
+      get_browsenode_info(child_id.text)
+    end
+  end
 end
