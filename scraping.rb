@@ -17,7 +17,7 @@ class AmazonBookScraping
   #== シークレットキー
   attr_reader :secret_key
 
-  #== 言語
+  #== 国
   attr_reader :country
 
   #== エラー時の再試行回数
@@ -93,11 +93,6 @@ class AmazonBookScraping
       end
       resp.items.each do |item|
         result.push(item.get("ASIN"))
-        # puts item.get("ItemAttributes/Title")
-        # puts item.get("ItemAttributes/Manufacturer")
-        # puts item.get("ItemAttributes/ProductGroup")
-        # puts item.get("ItemAttributes/Author")
-        # puts item.get_element("Author")
       end
     end
     result
@@ -150,7 +145,7 @@ class AmazonBookScraping
   #
   #= browsenode_idからasinを取得
   #
-  def get_asin_from_browsenode(browsenode_id, max_pages=0)
+  def get_asin_by_browsenode(browsenode_id, max_pages=0)
 
     result = []
 
@@ -187,7 +182,7 @@ class AmazonBookScraping
   #
   #= asin(isbn)から情報を取得する
   #
-  def get_iteminfo_by_asin(asin)
+  def get_item_by_asin(asin)
     title = ""
     retry_count = 0
     resp = nil
@@ -207,20 +202,13 @@ class AmazonBookScraping
     # puts resp.marshal_dump
     result = nil
     resp.items.each do |item|
-      #puts "ASIN:#{item.get('ASIN')}"
-      #puts "Author:#{item.get_array('ItemAttributes/Author').join(", ")}"
-      #puts "Title:#{item.get('ItemAttributes/Title')}"
-      #puts "Manufacturer:#{item.get('ItemAttributes/Manufacturer')}"
-      #puts "Group:#{item.get('ItemAttributes/ProductGroup')}"
-      #puts "URL:#{item.get('DetailPageURL')}"
-      #puts "Amount:#{item.get('ItemAttributes/ListPrice/Amount')}"
       result = {
-          author: item.get_array('ItemAttributes/Author').join(", "),
-          title: item.get('ItemAttributes/Title'),
+          author:       item.get_array('ItemAttributes/Author').join(", "),
+          title:        item.get('ItemAttributes/Title'),
           manufacturer: item.get('ItemAttributes/Manufacturer'),
-          group: item.get('ItemAttributes/ProductGroup'),
-          url: item.get('DetailPageURL'),
-          amount: item.get('ItemAttributes/ListPrice/Amount')
+          group:        item.get('ItemAttributes/ProductGroup'),
+          url:          item.get('DetailPageURL'),
+          amount:       item.get('ItemAttributes/ListPrice/Amount')
       }
     end
     result
@@ -230,6 +218,8 @@ class AmazonBookScraping
   #= スクレイピングをしてAMAZONから目次を取得する
   #
   def get_contents(asin)
+
+    result = ""
 
     # asinを基にURLを決定
     @url = "http://www.amazon.co.jp/gp/product/toc/" + asin.to_s
@@ -247,21 +237,23 @@ class AmazonBookScraping
     # 目次がない場合
     if @doc.xpath("//div[@class='content']//p").count == 0
       puts asin.to_s + "目次がありません"
-      return
+      return ""
     end
 
     # 目次を解析
     @doc.xpath("//div[@class='content']//p").each do |content|
 
-      puts title = get_iteminfo_by_asin(asin)[:title]
+      title = get_item_by_asin(asin)[:title]
+      result += title + "\n\n"
 
       # content.textの場合は正常に表示されるのに，content.inner_htmlの時には何故か文字化けする
       # encodeがそのままなのが問題なようなので，UTF-8に変換する．
       html = content.inner_html.encode('UTF-8')
       # htmlタグを削除
-      puts html.gsub(/<\s*br\s*>/,"\n").gsub(/<[^>]+>/,"")
+      result += html.gsub(/<\s*br\s*>/,"\n").gsub(/<[^>]+>/,"")
 
     end
+    result
   end
 
 end
