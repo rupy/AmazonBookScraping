@@ -87,10 +87,10 @@ class AmazonBookScraping
       end
       resp.items.each do |item|
         result.push(item.get("ASIN"))
-        puts item.get("ItemAttributes/Title")
-        puts item.get("ItemAttributes/Manufacturer")
-        puts item.get("ItemAttributes/ProductGroup")
-        puts item.get("ItemAttributes/Author")
+        #puts item.get("ItemAttributes/Title")
+        #puts item.get("ItemAttributes/Manufacturer")
+        #puts item.get("ItemAttributes/ProductGroup")
+        #puts item.get("ItemAttributes/Author")
         # puts item.get_element("Author")
       end
     end
