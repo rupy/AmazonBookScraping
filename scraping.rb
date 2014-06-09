@@ -203,9 +203,14 @@ class AmazonBookScraping
     end
     puts resp.marshal_dump
     resp.items.each do |item|
-      puts title = item.get("ItemAttributes/Title")
+      puts "ASIN:#{item.get('ASIN')}"
+      puts "Author:#{item.get_array('ItemAttributes/Author').join(", ")}"
+      puts "Title:#{item.get('ItemAttributes/Title')}"
+      puts "Manufacturer:#{item.get('ItemAttributes/Manufacturer')}"
+      puts "Group:#{item.get('ItemAttributes/ProductGroup')}"
+      puts "URL:#{item.get('DetailPageURL')}"
+      puts "Amount:#{item.get('ItemAttributes/ListPrice/Amount')}"
     end
-    return title
   end
 
 end
