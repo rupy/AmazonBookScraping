@@ -1,6 +1,7 @@
 # coding: utf-8
 
 require "amazon/ecs"
+require "open-uri"
 
 #
 #= Amazon.comから書籍の目次を取り出すためのライブラリ
@@ -157,6 +158,7 @@ class AmazonBookScraping
     for page in 1..max_pages
 
       retry_count = 0
+      resp = nil
       begin
         resp = Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
       rescue Amazon::RequestError => e
@@ -188,6 +190,7 @@ class AmazonBookScraping
   def get_iteminfo_by_asin(asin)
     title = ""
     retry_count = 0
+    resp = nil
     begin
       resp = Amazon::Ecs.item_lookup(asin.to_s, :response_group => 'Small, ItemAttributes, Images')
     rescue Amazon::RequestError => e
@@ -201,15 +204,63 @@ class AmazonBookScraping
       else
       end
     end
-    puts resp.marshal_dump
+    # puts resp.marshal_dump
+    result = nil
     resp.items.each do |item|
-      puts "ASIN:#{item.get('ASIN')}"
-      puts "Author:#{item.get_array('ItemAttributes/Author').join(", ")}"
-      puts "Title:#{item.get('ItemAttributes/Title')}"
-      puts "Manufacturer:#{item.get('ItemAttributes/Manufacturer')}"
-      puts "Group:#{item.get('ItemAttributes/ProductGroup')}"
-      puts "URL:#{item.get('DetailPageURL')}"
-      puts "Amount:#{item.get('ItemAttributes/ListPrice/Amount')}"
+      #puts "ASIN:#{item.get('ASIN')}"
+      #puts "Author:#{item.get_array('ItemAttributes/Author').join(", ")}"
+      #puts "Title:#{item.get('ItemAttributes/Title')}"
+      #puts "Manufacturer:#{item.get('ItemAttributes/Manufacturer')}"
+      #puts "Group:#{item.get('ItemAttributes/ProductGroup')}"
+      #puts "URL:#{item.get('DetailPageURL')}"
+      #puts "Amount:#{item.get('ItemAttributes/ListPrice/Amount')}"
+      result = {
+          author: item.get_array('ItemAttributes/Author').join(", "),
+          title: item.get('ItemAttributes/Title'),
+          manufacturer: item.get('ItemAttributes/Manufacturer'),
+          group: item.get('ItemAttributes/ProductGroup'),
+          url: item.get('DetailPageURL'),
+          amount: item.get('ItemAttributes/ListPrice/Amount')
+      }
+    end
+    result
+  end
+
+  #
+  #= スクレイピングをしてAMAZONから目次を取得する
+  #
+  def get_contents(asin)
+
+    # asinを基にURLを決定
+    @url = "http://www.amazon.co.jp/gp/product/toc/" + asin.to_s
+
+    # URLのリソースを取得
+    charset = nil
+    html = open(@url) do |f|
+      charset = f.charset
+      f.read
+    end
+
+    # Nokogiriでパースする
+    @doc = Nokogiri::HTML.parse(html, nil, charset)
+
+    # 目次がない場合
+    if @doc.xpath("//div[@class='content']//p").count == 0
+      puts asin.to_s + "目次がありません"
+      return
+    end
+
+    # 目次を解析
+    @doc.xpath("//div[@class='content']//p").each do |content|
+
+      puts title = get_iteminfo_by_asin(asin)[:title]
+
+      # content.textの場合は正常に表示されるのに，content.inner_htmlの時には何故か文字化けする
+      # encodeがそのままなのが問題なようなので，UTF-8に変換する．
+      html = content.inner_html.encode('UTF-8')
+      # htmlタグを削除
+      puts html.gsub(/<\s*br\s*>/,"\n").gsub(/<[^>]+>/,"")
+
     end
   end
 
