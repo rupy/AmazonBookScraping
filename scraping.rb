@@ -101,19 +101,27 @@ class AmazonBookScraping
   #
   #= browsenodeを取得
   #
-  def get_browsenode(node_id)
+  def get_browsenode(node_id, response_group=:TopSellers)
     options = {}
     # デフォルト値: BrowseNodeInfo
     # 有効な値: MostGifted | NewReleases | MostWishedFor | TopSellers
-    options[:ResponseGroup] = :TopSellers
+    options[:ResponseGroup] = response_group
     resp = Amazon::Ecs.browse_node_lookup(node_id, options)
     puts resp.marshal_dump
   end
 
   #
+  #= BrowseNodeが子供を持っているか
+  #
+  def has_children?(node)
+    # node.sizeは<childlen>タグを持っていれば1，持っていなければ0になる
+    node.size != 0
+  end
+
+  #
   #= BrowseNodeInfoを取得
   #
-  def get_browsenode_info(node_id)
+  def get_browsenode_info(node_id, prefix="")
     retry_count = 0
 
     resp = nil
@@ -133,13 +141,22 @@ class AmazonBookScraping
 
     browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
     name = browsenode.xpath("Name")
-    puts "NodeName: " + name.text
+    all_browsenode_path = prefix + "/" + name.text
+    puts "NodePath: " + all_browsenode_path
     children = browsenode.xpath("Children")
-    children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
-      puts "NodeID" + child_id.text
-      # 再帰
-      get_browsenode_info(child_id.text)
+
+    if has_children? children
+      # 子供あり
+      children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
+        puts "NodeID:" + child_id.text
+        # 再帰
+        get_browsenode_info(child_id.text, all_browsenode_path)
+      end
+    else
+      # 子供なし，末尾
+      puts "末尾"
     end
+
   end
 
   #
@@ -243,17 +260,15 @@ class AmazonBookScraping
     # 目次を解析
     @doc.xpath("//div[@class='content']//p").each do |content|
 
-      title = get_item_by_asin(asin)[:title]
-      result += title + "\n\n"
-
       # content.textの場合は正常に表示されるのに，content.inner_htmlの時には何故か文字化けする
       # encodeがそのままなのが問題なようなので，UTF-8に変換する．
       html = content.inner_html.encode('UTF-8')
       # htmlタグを削除
-      result += html.gsub(/<\s*br\s*>/,"\n").gsub(/<[^>]+>/,"")
+      result = html.gsub(/<\s*br\s*>/,"\n").gsub(/<[^>]+>/,"")
 
     end
     result
   end
+
 
 end
