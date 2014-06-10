@@ -30,8 +30,6 @@ class AmazonBookScraping
   #== sqlite3のDBの内容を保存するファイル名
   DB_FILENAME = "book_info.db"
 
-
-
   #
   #= 初期化
   #
@@ -57,15 +55,14 @@ class AmazonBookScraping
   end
 
   #
-  #= クエリに対する総ページ数（APIの制限から最大10ページ）
+  #= APIレスポンスに対する総ページ数（APIの制限から最大10ページだが，それ以上あってもその値を返却する）
   #
-  def total_pages(query)
+  def total_pages
     resp = try_and_retry do
-      Amazon::Ecs.item_search(query, :item_page => 1)
+      yield
     end
     #puts resp.marshal_dump
     pages = resp.total_pages.to_i
-    pages = 10 if pages > 10
     puts "total pages:" + pages.to_s
     pages
   end
@@ -100,9 +97,13 @@ class AmazonBookScraping
   def get_asin(query,max_page=0)
     result = []
 
+    # 繰り返すページ数を求める
     if max_page == 0
-      max_page = total_pages(query)
+      max_page = total_pages do
+        Amazon::Ecs.item_search(query, {:item_page => page})
+      end
     end
+    max_page = 10 if max_page > 10
 
     for page in 1..max_page
       retry_count = 0
@@ -142,12 +143,19 @@ class AmazonBookScraping
   #
   #= browsenode_idからasinを取得
   #
-  def get_asin_by_browsenode(browsenode_id, max_pages=1)
+  def get_asin_by_browsenode(browsenode_id, max_page=0)
 
     result = []
 
-    max_pages = 10 if max_pages > 10
-    for page in 1..max_pages
+    # 繰り返すページ数を求める
+    if max_page == 0
+      max_page = total_pages do
+        Amazon::Ecs.item_search("" , { :browse_node => browsenode_id})
+      end
+    end
+    max_page = 10 if max_page > 10
+
+    for page in 1..max_page
 
       resp = try_and_retry do
         Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
@@ -346,7 +354,7 @@ CREATE TABLE book_info (
           save_data info
         else
           # 重複
-          puts "asin:'#{book_info[:asin]}' is already registered"
+          puts "asin:'#{asin}' is already registered"
         end
       end
     end
