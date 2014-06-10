@@ -2,6 +2,7 @@
 
 require "amazon/ecs"
 require "open-uri"
+require 'sqlite3'
 
 #
 #= Amazon.comから書籍の目次を取り出すためのライブラリ
@@ -268,6 +269,61 @@ class AmazonBookScraping
 
     end
     result
+  end
+
+  #
+  #= データベースに格納するためのテーブルを作成
+  #
+  def create_table(filename)
+    db = SQLite3::Database.new(filename)
+    create_table_sql = <<-SQL
+CREATE TABLE book_info (
+  id            integer PRIMARY KEY AUTOINCREMENT,
+  title         text,
+  asin          integer,
+  browsenode    text,
+  author        text,
+  manufacturer  text,
+  url           text,
+  amount        integer,
+  contents      text
+);
+    SQL
+
+    begin
+      db.execute(create_table_sql)
+    rescue SQLite3::SQLException => e
+      puts e.message
+    ensure
+      db.close
+    end
+
+    db.close
+  end
+
+  #
+  #= データベースにデータを格納する
+  #
+  def save_data(filename, book_info=nil)
+    db = SQLite3::Database.new(filename)
+    insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
+
+    begin
+      db.execute(insert_sql,
+                 title:         book_info[:title],
+                 asin:          book_info[:asin],
+                 browsenode:    book_info[:browse_node],
+                 author:        book_info[:author],
+                 manufacturer:  book_info[:manufacturer],
+                 url:           book_info[:url],
+                 amount:        book_info[:amount],
+                 contents:      book_info[:contents])
+
+    rescue SQLite3::SQLException => e
+      puts e.message
+    ensure
+      db.close
+    end
   end
 
 
