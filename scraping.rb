@@ -63,7 +63,7 @@ class AmazonBookScraping
     end
     #puts resp.marshal_dump
     pages = resp.total_pages.to_i
-    puts "total pages:" + pages.to_s
+    #puts "total pages:" + pages.to_s
     pages
   end
 
@@ -79,7 +79,7 @@ class AmazonBookScraping
       resp = yield
     rescue Amazon::RequestError => e
       if /503/ =~ e.message && retry_count < MAX_RETRY
-        puts e.message
+        # puts e.message
         puts "retry_count:" + retry_count.to_s
         sleep(RETRY_TIME * retry_count)
         retry_count += 1
@@ -245,7 +245,8 @@ class AmazonBookScraping
 CREATE TABLE book_info (
   id            integer PRIMARY KEY AUTOINCREMENT,
   title         text,
-  asin          integer,
+  asin          text,
+  node_id       integer,
   browsenode    text,
   author        text,
   manufacturer  text,
@@ -269,13 +270,14 @@ CREATE TABLE book_info (
   #
   def save_data(book_info=nil)
     db = SQLite3::Database.new(DB_FILENAME)
-    insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
+    insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
 
     begin
       db.execute(insert_sql,
                  title:         book_info[:title],
                  asin:          book_info[:asin],
-                 browsenode:    book_info[:browse_node],
+                 node_id:    book_info[:node_id],
+                 browsenode:    book_info[:browsenode],
                  author:        book_info[:author],
                  manufacturer:  book_info[:manufacturer],
                  url:           book_info[:url],
@@ -326,13 +328,12 @@ CREATE TABLE book_info (
     if has_children? children
       # 子供あり
       children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
-        puts "NodeID:" + child_id.text
+        # puts "NodeID:" + child_id.text
         # 再帰
         store_bookinfo_from_browsenode(child_id.text, all_browsenode_path)
       end
     else
       # 子供がなく，末尾（葉）
-      puts "末尾"
       # カテゴリに属する書籍のasinを取得
       asin_array = get_asin_by_browsenode(node_id)
       asin_array.each do |asin|
@@ -343,6 +344,7 @@ CREATE TABLE book_info (
           info = {
               title:         book_info[:title],
               asin:          asin,
+              node_id:       node_id,
               browsenode:    all_browsenode_path,
               author:        book_info[:author],
               manufacturer:  book_info[:manufacturer],
