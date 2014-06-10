@@ -27,6 +27,11 @@ class AmazonBookScraping
   #== 再試行のための待ち時間(second)
   RETRY_TIME = 2
 
+  #== sqlite3のDBの内容を保存するファイル名
+  DB_FILENAME = "book_info.db"
+
+
+
   #
   #= 初期化
   #
@@ -55,7 +60,9 @@ class AmazonBookScraping
   #= クエリに対する総ページ数（APIの制限から最大10ページ）
   #
   def total_pages(query)
-    resp = Amazon::Ecs.item_search(query, :item_page => 1)
+    resp = try_and_retry do
+      Amazon::Ecs.item_search(query, :item_page => 1)
+    end
     #puts resp.marshal_dump
     pages = resp.total_pages.to_i
     pages = 10 if pages > 10
@@ -133,38 +140,9 @@ class AmazonBookScraping
   end
 
   #
-  #= BrowseNodeInfoを取得
-  #
-  def get_browsenode_info(node_id, prefix="")
-
-    resp = try_and_retry do
-      Amazon::Ecs.browse_node_lookup(node_id)
-    end
-
-    browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
-    name = browsenode.xpath("Name")
-    all_browsenode_path = prefix + "/" + name.text
-    puts "NodePath: " + all_browsenode_path
-    children = browsenode.xpath("Children")
-
-    if has_children? children
-      # 子供あり
-      children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
-        puts "NodeID:" + child_id.text
-        # 再帰
-        get_browsenode_info(child_id.text, all_browsenode_path)
-      end
-    else
-      # 子供なし，末尾
-      puts "末尾"
-    end
-
-  end
-
-  #
   #= browsenode_idからasinを取得
   #
-  def get_asin_by_browsenode(browsenode_id, max_pages=0)
+  def get_asin_by_browsenode(browsenode_id, max_pages=1)
 
     result = []
 
@@ -179,7 +157,7 @@ class AmazonBookScraping
       resp.items.each do |item|
         puts title = item.get("ItemAttributes/Title")
         asin = item.get("ASIN")
-        result.push({:asin => asin, :title => title})
+        result.push(asin)
       end
       puts "============="
     end
@@ -190,7 +168,7 @@ class AmazonBookScraping
   #
   #= asin(isbn)から情報を取得する
   #
-  def get_item_by_asin(asin)
+  def get_bookinfo_by_asin(asin)
 
     resp = try_and_retry do
       Amazon::Ecs.item_lookup(asin.to_s, :response_group => 'Small, ItemAttributes, Images')
@@ -200,8 +178,8 @@ class AmazonBookScraping
     result = nil
     resp.items.each do |item|
       result = {
-          author:       item.get_array('ItemAttributes/Author').join(", "),
           title:        item.get('ItemAttributes/Title'),
+          author:       item.get_array('ItemAttributes/Author').join(", "),
           manufacturer: item.get('ItemAttributes/Manufacturer'),
           group:        item.get('ItemAttributes/ProductGroup'),
           url:          item.get('DetailPageURL'),
@@ -253,8 +231,8 @@ class AmazonBookScraping
   #
   #= データベースに格納するためのテーブルを作成
   #
-  def create_table(filename)
-    db = SQLite3::Database.new(filename)
+  def create_table
+    db = SQLite3::Database.new(DB_FILENAME)
     create_table_sql = <<-SQL
 CREATE TABLE book_info (
   id            integer PRIMARY KEY AUTOINCREMENT,
@@ -281,8 +259,8 @@ CREATE TABLE book_info (
   #
   #= データベースにデータを格納する
   #
-  def save_data(filename, book_info=nil)
-    db = SQLite3::Database.new(filename)
+  def save_data(book_info=nil)
+    db = SQLite3::Database.new(DB_FILENAME)
     insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
 
     begin
@@ -306,8 +284,8 @@ CREATE TABLE book_info (
   #
   #= すでにasinのものが登録されているかどうか
   #
-  def already_registered?(filename, asin)
-    db = SQLite3::Database.new(filename)
+  def already_registered?(asin)
+    db = SQLite3::Database.new(DB_FILENAME)
     select_sql = "SELECT COUNT(*) FROM book_info WHERE asin = :asin;"
     begin
       count = db.execute(select_sql, asin: asin)
@@ -317,6 +295,61 @@ CREATE TABLE book_info (
       db.close
     end
     (count[0][0] > 0)
+  end
+
+  #
+  #= BrowseNodeInfoを取得
+  #
+  def store_bookinfo_from_browsenode(node_id, prefix="")
+
+    # browsenode情報を取ってくる
+    resp = try_and_retry do
+      Amazon::Ecs.browse_node_lookup(node_id)
+    end
+
+    # Nokogiri形式のデータをパースする
+    browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
+    name = browsenode.xpath("Name")
+    all_browsenode_path = prefix + "/" + name.text
+    puts "NodePath: " + all_browsenode_path
+
+    # 子供がいればたどる
+    children = browsenode.xpath("Children")
+    if has_children? children
+      # 子供あり
+      children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
+        puts "NodeID:" + child_id.text
+        # 再帰
+        store_bookinfo_from_browsenode(child_id.text, all_browsenode_path)
+      end
+    else
+      # 子供がなく，末尾（葉）
+      puts "末尾"
+      # カテゴリに属する書籍のasinを取得
+      asin_array = get_asin_by_browsenode(node_id)
+      asin_array.each do |asin|
+        # DB上に重複がなければ
+        unless already_registered? asin
+          book_info = get_bookinfo_by_asin(asin)
+          contents = get_contents(asin)
+          info = {
+              title:         book_info[:title],
+              asin:          asin,
+              browsenode:    all_browsenode_path,
+              author:        book_info[:author],
+              manufacturer:  book_info[:manufacturer],
+              url:           book_info[:url],
+              amount:        book_info[:amount],
+              contents:      contents
+          }
+          # DBに格納
+          save_data info
+        else
+          # 重複
+          puts "asin:'#{book_info[:asin]}' is already registered"
+        end
+      end
+    end
   end
 
 end
