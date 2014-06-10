@@ -297,8 +297,6 @@ CREATE TABLE book_info (
     ensure
       db.close
     end
-
-    db.close
   end
 
   #
@@ -326,5 +324,20 @@ CREATE TABLE book_info (
     end
   end
 
+  #
+  #= すでにasinのものが登録されているかどうか
+  #
+  def already_registered?(filename, asin)
+    db = SQLite3::Database.new(filename)
+    select_sql = "SELECT COUNT(*) FROM book_info WHERE asin = :asin;"
+    begin
+      count = db.execute(select_sql, asin: asin)
+    rescue SQLite3::SQLException => e
+      puts e.message
+    ensure
+      db.close
+    end
+    (count[0][0] > 0)
+  end
 
 end
