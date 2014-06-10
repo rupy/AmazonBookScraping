@@ -64,6 +64,30 @@ class AmazonBookScraping
   end
 
   #
+  #= ブロックで受け取った処理を試行し，エラーが出たら一定数再試行
+  #
+  def try_and_retry
+    retry_count = 0
+    # 立て続けにたくさんのデータを取ってきていると、APIの制限に引っかかってエラーを出すことがある。
+    # その場合にはしばらく待って、再度実行する
+    resp = nil
+    begin
+      resp = yield
+    rescue Amazon::RequestError => e
+      if /503/ =~ e.message && retry_count < MAX_RETRY
+        puts e.message
+        puts "retry_count:" + retry_count.to_s
+        sleep(RETRY_TIME * retry_count)
+        retry_count += 1
+        retry
+      else
+        raise e
+      end
+    end
+    resp
+  end
+
+  #
   #= ASINの配列を取得
   #
   def get_asin(query,max_page=0)
@@ -76,22 +100,11 @@ class AmazonBookScraping
     for page in 1..max_page
       retry_count = 0
       puts "page: " + page.to_s
-      begin
-        resp = Amazon::Ecs.item_search(query, {:item_page => page})
-          # puts resp.marshal_dump
-          # 立て続けにたくさんのデータを取ってきていると、APIの制限に引っかかってエラーを出すことがある。
-          # その場合にはしばらく待って、再度実行する
-      rescue Amazon::RequestError => e
-        if /503/ =~ e.message && retry_count < MAX_RETRY
-          puts e.message
-          puts "retry_count:" + retry_count.to_s
-          sleep(RETRY_TIME * retry_count)
-          retry_count += 1
-          retry
-        else
-          raise e
-        end
+      resp = try_and_retry do
+        Amazon::Ecs.item_search(query, {:item_page => page})
       end
+      # puts resp.marshal_dump
+
       resp.items.each do |item|
         result.push(item.get("ASIN"))
       end
@@ -123,21 +136,9 @@ class AmazonBookScraping
   #= BrowseNodeInfoを取得
   #
   def get_browsenode_info(node_id, prefix="")
-    retry_count = 0
 
-    resp = nil
-    begin
-      resp = Amazon::Ecs.browse_node_lookup(node_id)
-    rescue Amazon::RequestError => e
-      if /503/ =~ e.message && retry_count < MAX_RETRY
-        puts e.message
-        puts "retry_count:" + retry_count.to_s
-        sleep(RETRY_TIME * retry_count)
-        retry_count += 1
-        retry
-      else
-        raise e
-      end
+    resp = try_and_retry do
+      Amazon::Ecs.browse_node_lookup(node_id)
     end
 
     browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
@@ -170,19 +171,8 @@ class AmazonBookScraping
     max_pages = 10 if max_pages > 10
     for page in 1..max_pages
 
-      retry_count = 0
-      resp = nil
-      begin
-        resp = Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
-      rescue Amazon::RequestError => e
-        if /503/ =~ e.message && retry_count < MAX_RETRY
-          puts e.message
-          puts "retry_count:" + retry_count.to_s
-          sleep(RETRY_TIME * retry_count)
-          retry_count += 1
-          retry
-        else
-        end
+      resp = try_and_retry do
+        Amazon::Ecs.item_search("" , { :browse_node => browsenode_id, :item_page => page})
       end
 
       # puts res.marshal_dump
@@ -201,22 +191,11 @@ class AmazonBookScraping
   #= asin(isbn)から情報を取得する
   #
   def get_item_by_asin(asin)
-    title = ""
-    retry_count = 0
-    resp = nil
-    begin
-      resp = Amazon::Ecs.item_lookup(asin.to_s, :response_group => 'Small, ItemAttributes, Images')
-    rescue Amazon::RequestError => e
-      p e
-      if /503/ =~ e.message && retry_count < MAX_RETRY
-        puts e.message
-        puts "retry_count:" + retry_count.to_s
-        sleep(RETRY_TIME * retry_count)
-        retry_count += 1
-        retry
-      else
-      end
+
+    resp = try_and_retry do
+      Amazon::Ecs.item_lookup(asin.to_s, :response_group => 'Small, ItemAttributes, Images')
     end
+
     # puts resp.marshal_dump
     result = nil
     resp.items.each do |item|
