@@ -40,6 +40,15 @@ class AmazonBookScraping
     @country = country
 
     configure
+
+    # DBオブジェクトの初期化
+    @db = SQLite3::Database.new(DB_FILENAME)
+
+    ObjectSpace.define_finalizer(self, self.class.close_db)
+  end
+
+  def self.close_db
+    proc { @db.close }
   end
 
   #
@@ -274,7 +283,7 @@ CREATE TABLE book_info (
       @db.execute(insert_sql,
                  title:         book_info[:title],
                  asin:          book_info[:asin],
-                 node_id:    book_info[:node_id],
+                 node_id:       book_info[:node_id],
                  browsenode:    book_info[:browsenode],
                  author:        book_info[:author],
                  manufacturer:  book_info[:manufacturer],
@@ -303,7 +312,8 @@ CREATE TABLE book_info (
   #
   #= node_idからブラウズノードのパスを取得
   #
-  def get_browsenode_path(node_id)
+  def get_browsenode_array(node_id, print_flag=false)
+    result = []
     options = {}
     resp = try_and_retry do
       Amazon::Ecs.browse_node_lookup(node_id, options)
@@ -314,6 +324,7 @@ CREATE TABLE book_info (
     browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
     name = browsenode.xpath("Name")
     all_browsenode_path = name.text
+    result.unshift name.text
 
     # 先祖がいればたどる
     parent = browsenode.xpath("Ancestors")
@@ -321,19 +332,20 @@ CREATE TABLE book_info (
     while has_children? parent
       # 先祖あり
       parent_node_name = parent.xpath("BrowseNode/Name")
+      result.unshift parent_node_name.text
       all_browsenode_path = "#{parent_node_name.text}/#{all_browsenode_path}"
       parent = parent.xpath("BrowseNode/Ancestors")
     end
-    "/" + all_browsenode_path
+    puts "/" + all_browsenode_path if print_flag
+
+    result
   end
 
   #
   #= browsenodeをたどっていき，末尾のノードから得られるすべてのasinを用いて，目次を取得する
+  #  first_node_idに前回中断した時のnode_idを入れることで，エラーが出ても途中から再開できる
   #
-  def store_bookinfo_from_browsenode(node_id, prefix="", first_node_id=nil)
-
-    # DBオブジェクトの初期化
-    @db = SQLite3::Database.new(DB_FILENAME)
+  def store_bookinfo_from_browsenode(node_id, first_node_id = nil, prefix = "")
 
     # browsenode情報を取ってくる
     resp = try_and_retry do
@@ -342,18 +354,40 @@ CREATE TABLE book_info (
 
     # Nokogiri形式のデータをパースする
     browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
-    name = browsenode.xpath("Name")
-    all_browsenode_path = prefix + "/" + name.text
+    name = browsenode.xpath("Name").text
+    all_browsenode_path = prefix + "/" + name
     puts "NodePath: " + all_browsenode_path
+
+    # first_node_idが設定されていればチェックをする必要がある
+    unless first_node_id.nil?
+      # 親をたどる
+      browsenode_array = get_browsenode_array(first_node_id)
+      # 開始する階層数
+      bottom_level = browsenode_array.size - 1
+      # 現在の階層
+      current_level = browsenode_array.index(name)
+      # 開始地点か
+      if bottom_level == current_level
+        puts "first node: " + name
+      end
+    end
 
     # 子供がいればたどる
     children = browsenode.xpath("Children")
+
     if has_children? children
       # 子供あり
-      children_nodes = children.xpath("BrowseNode/BrowseNodeId").each do |child_id|
-        # puts "NodeID:" + child_id.text
+      children.xpath("BrowseNode").each_with_index do |child_node, i|
+        child_id = child_node.xpath("BrowseNodeId").text
+        child_name = child_node.xpath("Name").text
+        # ファーストノードかの確認
+        if first_node_id.nil? || browsenode_array[current_level + 1] == child_name
+          store_bookinfo_from_browsenode(child_id, first_node_id, all_browsenode_path)
+          first_node_id = nil
+        else
+          puts "skip: " + all_browsenode_path + "/" + child_name
+        end
         # 再帰
-        store_bookinfo_from_browsenode(child_id.text, all_browsenode_path)
       end
     else
       # 子供がなく，末尾（葉）
@@ -383,8 +417,6 @@ CREATE TABLE book_info (
         end
       end
     end
-
-    @db.clone
   end
 
 end
