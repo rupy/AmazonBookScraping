@@ -242,7 +242,6 @@ class AmazonBookScraping
   #= データベースに格納するためのテーブルを作成
   #
   def create_table
-    db = SQLite3::Database.new(DB_FILENAME)
     create_table_sql = <<-SQL
 CREATE TABLE book_info (
   id            integer PRIMARY KEY AUTOINCREMENT,
@@ -259,11 +258,9 @@ CREATE TABLE book_info (
     SQL
 
     begin
-      db.execute(create_table_sql)
+      @db.execute(create_table_sql)
     rescue SQLite3::SQLException => e
       puts e.message
-    ensure
-      db.close
     end
   end
 
@@ -271,11 +268,10 @@ CREATE TABLE book_info (
   #= データベースにデータを格納する
   #
   def save_data(book_info=nil)
-    db = SQLite3::Database.new(DB_FILENAME)
     insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
 
     begin
-      db.execute(insert_sql,
+      @db.execute(insert_sql,
                  title:         book_info[:title],
                  asin:          book_info[:asin],
                  node_id:    book_info[:node_id],
@@ -288,8 +284,6 @@ CREATE TABLE book_info (
 
     rescue SQLite3::SQLException => e
       puts e.message
-    ensure
-      db.close
     end
   end
 
@@ -297,14 +291,11 @@ CREATE TABLE book_info (
   #= すでにasinのものが登録されているかどうか
   #
   def already_registered?(asin)
-    db = SQLite3::Database.new(DB_FILENAME)
     select_sql = "SELECT COUNT(*) FROM book_info WHERE asin = :asin;"
     begin
-      count = db.execute(select_sql, asin: asin)
+      count = @db.execute(select_sql, asin: asin)
     rescue SQLite3::SQLException => e
       puts e.message
-    ensure
-      db.close
     end
     (count[0][0] > 0)
   end
@@ -317,7 +308,7 @@ CREATE TABLE book_info (
     resp = try_and_retry do
       Amazon::Ecs.browse_node_lookup(node_id, options)
     end
-    puts resp.marshal_dump
+    #puts resp.marshal_dump
 
     # Nokogiri形式のデータをパースする
     browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
@@ -340,6 +331,9 @@ CREATE TABLE book_info (
   #= browsenodeをたどっていき，末尾のノードから得られるすべてのasinを用いて，目次を取得する
   #
   def store_bookinfo_from_browsenode(node_id, prefix="", first_node_id=nil)
+
+    # DBオブジェクトの初期化
+    @db = SQLite3::Database.new(DB_FILENAME)
 
     # browsenode情報を取ってくる
     resp = try_and_retry do
@@ -389,6 +383,8 @@ CREATE TABLE book_info (
         end
       end
     end
+
+    @db.clone
   end
 
 end
