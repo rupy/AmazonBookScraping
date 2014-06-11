@@ -128,7 +128,9 @@ class AmazonBookScraping
     # デフォルト値: BrowseNodeInfo
     # 有効な値: MostGifted | NewReleases | MostWishedFor | TopSellers
     options[:ResponseGroup] = response_group
-    resp = Amazon::Ecs.browse_node_lookup(node_id, options)
+    resp = try_and_retry do
+      Amazon::Ecs.browse_node_lookup(node_id, options)
+    end
     puts resp.marshal_dump
   end
 
@@ -308,9 +310,36 @@ CREATE TABLE book_info (
   end
 
   #
-  #= BrowseNodeInfoを取得
+  #= node_idからブラウズノードのパスを取得
   #
-  def store_bookinfo_from_browsenode(node_id, prefix="")
+  def get_browsenode_path(node_id)
+    options = {}
+    resp = try_and_retry do
+      Amazon::Ecs.browse_node_lookup(node_id, options)
+    end
+    puts resp.marshal_dump
+
+    # Nokogiri形式のデータをパースする
+    browsenode = resp.doc.xpath("//BrowseNodes/BrowseNode")
+    name = browsenode.xpath("Name")
+    all_browsenode_path = name.text
+
+    # 先祖がいればたどる
+    parent = browsenode.xpath("Ancestors")
+
+    while has_children? parent
+      # 先祖あり
+      parent_node_name = parent.xpath("BrowseNode/Name")
+      all_browsenode_path = "#{parent_node_name.text}/#{all_browsenode_path}"
+      parent = parent.xpath("BrowseNode/Ancestors")
+    end
+    "/" + all_browsenode_path
+  end
+
+  #
+  #= browsenodeをたどっていき，末尾のノードから得られるすべてのasinを用いて，目次を取得する
+  #
+  def store_bookinfo_from_browsenode(node_id, prefix="", first_node_id=nil)
 
     # browsenode情報を取ってくる
     resp = try_and_retry do
