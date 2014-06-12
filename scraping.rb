@@ -89,7 +89,8 @@ class AmazonBookScraping
     rescue Amazon::RequestError => e
       if /503/ =~ e.message && retry_count < MAX_RETRY
         # puts e.message
-        puts "retry_count:" + retry_count.to_s
+        print "retry" if retry_count == 0
+        print "."
         sleep(RETRY_TIME * retry_count)
         retry_count += 1
         retry
@@ -97,6 +98,7 @@ class AmazonBookScraping
         raise e
       end
     end
+    puts "" if retry_count > 0
     resp
   end
 
@@ -146,8 +148,8 @@ class AmazonBookScraping
   #
   #= BrowseNodeが子供を持っているか
   #
-  def has_children?(node)
-    # node.sizeは<childlen>タグを持っていれば1，持っていなければ0になる
+  def has_child_nodes?(node)
+    # node.sizeは子タグを持っていれば1以上，持っていなければ0になる
     node.size != 0
   end
 
@@ -230,7 +232,7 @@ class AmazonBookScraping
 
     # 目次がない場合
     if @doc.xpath("//div[@class='content']//p").count == 0
-      puts asin.to_s + "目次がありません"
+      puts "asin: " + asin.to_s + "は目次がありません"
       return ""
     end
 
@@ -277,7 +279,12 @@ CREATE TABLE book_info (
   #= データベースにデータを格納する
   #
   def save_data(book_info=nil)
-    insert_sql = "INSERT INTO book_info VALUES (NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);"
+    insert_sql = <<-SQL
+INSERT INTO
+book_info
+VALUES
+(NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);
+    SQL
 
     begin
       @db.execute(insert_sql,
@@ -329,7 +336,7 @@ CREATE TABLE book_info (
     # 先祖がいればたどる
     parent = browsenode.xpath("Ancestors")
 
-    while has_children? parent
+    while has_child_nodes? parent
       # 先祖あり
       parent_node_name = parent.xpath("BrowseNode/Name")
       result.unshift parent_node_name.text
@@ -375,15 +382,18 @@ CREATE TABLE book_info (
     # 子供がいればたどる
     children = browsenode.xpath("Children")
 
-    if has_children? children
+    if has_child_nodes? children
       # 子供あり
-      children.xpath("BrowseNode").each_with_index do |child_node, i|
+      children.xpath("BrowseNode").each do |child_node|
         child_id = child_node.xpath("BrowseNodeId").text
         child_name = child_node.xpath("Name").text
-        # ファーストノードかの確認
+        # first_node_idがnilならとりあえず解析を進めればいい
+        # first_node_idが設定されていて，目的のノードならば解析を進める
         if first_node_id.nil? || browsenode_array[current_level + 1] == child_name
           store_bookinfo_from_browsenode(child_id, first_node_id, all_browsenode_path)
+          # 次からはskipしない
           first_node_id = nil
+        # first_node_idが設定されているのに，目的のノードでない場合にはskipする
         else
           puts "skip: " + all_browsenode_path + "/" + child_name
         end
@@ -413,10 +423,12 @@ CREATE TABLE book_info (
           save_data info
         else
           # 重複
-          puts "asin:'#{asin}' is already registered"
+          puts "asin:'#{asin}'はすでに登録されています"
         end
       end
     end
   end
+
+
 
 end
