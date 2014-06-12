@@ -111,13 +111,12 @@ class AmazonBookScraping
     # 繰り返すページ数を求める
     if max_page == 0
       max_page = total_pages do
-        Amazon::Ecs.item_search(query, {:item_page => page})
+        Amazon::Ecs.item_search(query)
       end
     end
     max_page = 10 if max_page > 10
 
     for page in 1..max_page
-      retry_count = 0
       puts "page: " + page.to_s
       resp = try_and_retry do
         Amazon::Ecs.item_search(query, {:item_page => page})
@@ -319,7 +318,7 @@ VALUES
   #
   #= node_idからブラウズノードのパスを取得
   #
-  def get_browsenode_array(node_id, print_flag=false)
+  def get_browsenode_ancestors(node_id, print_flag=false)
     result = []
     options = {}
     resp = try_and_retry do
@@ -368,11 +367,11 @@ VALUES
     # first_node_idが設定されていればチェックをする必要がある
     unless first_node_id.nil?
       # 親をたどる
-      browsenode_array = get_browsenode_array(first_node_id)
+      ancestors = get_browsenode_ancestors(first_node_id)
       # 開始する階層数
-      bottom_level = browsenode_array.size - 1
+      bottom_level = ancestors.size - 1
       # 現在の階層
-      current_level = browsenode_array.index(name)
+      current_level = ancestors.index(name)
       # 開始地点か
       if bottom_level == current_level
         puts "first node: " + name
@@ -389,7 +388,7 @@ VALUES
         child_name = child_node.xpath("Name").text
         # first_node_idがnilならとりあえず解析を進めればいい
         # first_node_idが設定されていて，目的のノードならば解析を進める
-        if first_node_id.nil? || browsenode_array[current_level + 1] == child_name
+        if first_node_id.nil? || ancestors[current_level + 1] == child_name
           store_bookinfo_from_browsenode(child_id, first_node_id, all_browsenode_path)
           # 次からはskipしない
           first_node_id = nil
