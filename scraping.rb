@@ -389,6 +389,7 @@ VALUES
         # first_node_idがnilならとりあえず解析を進めればいい
         # first_node_idが設定されていて，目的のノードならば解析を進める
         if first_node_id.nil? || ancestors[current_level + 1] == child_name
+          # 再帰
           store_bookinfo_from_browsenode(child_id, first_node_id, all_browsenode_path)
           # 次からはskipしない
           first_node_id = nil
@@ -396,7 +397,6 @@ VALUES
         else
           puts "skip: " + all_browsenode_path + "/" + child_name
         end
-        # 再帰
       end
     else
       # 子供がなく，末尾（葉）
@@ -428,6 +428,36 @@ VALUES
     end
   end
 
+  #
+  #= クラスタリングに不要な文字列を削除する前処理
+  #
+  def pre_processing(text)
 
+    index_rex = %r!
+(第?[0-9０-９IV一二三四五六七八九十序終]+\s*(章|節|部|話|回|週|時間目))                         #章や節の番号を除く
+|((Chapter|Chap|Part|Tip|Step|ステップ|CASE|Lesson|フェーズ|Phase)\.?-?\s*\d+\.?)           # 章や節の番号を除く
+|(^\d[.:]\b)                                        #数字＋記号の文字列を除く（これも節を表すことが多い）
+|(^\d+\.\d+(\.\d+)*)                                #1.2.3などの数字も節を表すことが多い
+|(^[a-zA-Z\-]\.?\d+)                                # B.やA.2、-3も
+|(^\d+\s+)                                          # 行頭のただの文字
+|(^[0-9a-zA-Z]+-\d+)                                # 1-2-3など
+|(^I{2,}\b)                                         # IIIなど
+|(はじめに|初めに|Introduction|まえがき|前書き|目次)
+|(おわりに|終わりに|最後に|さいごに|あとがき|謝辞|エピローグ|EPILOGUE|まとめ)
+|(参考文献|索引|Index|インデックス)
+|((付録|巻末資料|Appendix|特集)\s*[A-Z0-9]?\b)         # 付録
+|([　 ◆・■●【】．〔〕…※◯●：＜＞☆★]|ほか|&amp;)             # 記号
+|(-{2,})                                            # 長い線
+|(^[\!-\/:-@\[-`{-~0-9\s]+)                         #記号と数字から始まる部分
+!xi
+    text = text
+    .strip
+    .gsub(index_rex,"")
+    .strip
+    .gsub(index_rex,"")
+    .strip
+
+    text
+  end
 
 end
