@@ -467,26 +467,31 @@ VALUES
   def pre_processing()
 
     alter_sql = <<-SQL
-ALTER TABLE book_info ADD COLUMN pre_processed_contents[text];
+ALTER TABLE book_info 
+ADD COLUMN pre_processed_contents[text];
     SQL
 
     select_sql = <<-SQL
-SELECT id, contents FROM book_info WHERE contents <> '';
+SELECT id, contents 
+FROM book_info 
+WHERE contents <> '';
     SQL
 
     update_sql = <<-SQL
-UPDATE book_info SET pre_processed_contents = :pre_processed_contents WHERE id = :id;
+UPDATE book_info 
+SET pre_processed_contents = :pre_processed_contents 
+WHERE id = :id;
     SQL
 
     begin
-      puts "ALTER TABLE"
+      puts "DOING ALTER TABLE STEP"
       @db.execute(alter_sql)
     rescue SQLite3::SQLException => e
       puts e.message
     end
 
     begin
-      puts "UPDATE"
+      puts "DOING UPDATE STEP"
       @db.execute(select_sql) do |row|
         new_contents = remove_structure_words(row[1])
         book_info_id = row[0]
@@ -497,10 +502,6 @@ UPDATE book_info SET pre_processed_contents = :pre_processed_contents WHERE id =
     rescue SQLite3::SQLException => e
       puts e.message
     end
-
-
-
-
   end
 
 end
