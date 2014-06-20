@@ -3,6 +3,7 @@
 require "amazon/ecs"
 require "open-uri"
 require 'sqlite3'
+require 'sanitize'
 
 #
 #= Amazon.comから書籍の目次を取り出すためのライブラリ
@@ -431,7 +432,7 @@ VALUES
   #
   #= クラスタリングに不要な文字列を削除する前処理
   #
-  def pre_processing(text)
+  def remove_structure_words(text)
 
     index_rex = %r!
 (第?[0-9０-９IV一二三四五六七八九十序終]+\s*(章|節|部|話|回|週|時間目))                         #章や節の番号を除く
@@ -450,6 +451,7 @@ VALUES
 |(-{2,})                                            # 長い線
 |(^[\!-\/:-@\[-`{-~0-9\s]+)                         #記号と数字から始まる部分
 !xi
+    
     text = text
     .strip
     .gsub(index_rex,"")
@@ -458,7 +460,47 @@ VALUES
     .strip
 
     text = CGI.unescapeHTML(text)
+    text = Sanitize.clean(text)
     text
+  end
+
+  def pre_processing()
+
+    alter_sql = <<-SQL
+ALTER TABLE book_info ADD COLUMN pre_processed_contents[text];
+    SQL
+
+    select_sql = <<-SQL
+SELECT id, contents FROM book_info WHERE contents <> '';
+    SQL
+
+    update_sql = <<-SQL
+UPDATE book_info SET pre_processed_contents = :pre_processed_contents WHERE id = :id;
+    SQL
+
+    begin
+      puts "ALTER TABLE"
+      @db.execute(alter_sql)
+    rescue SQLite3::SQLException => e
+      puts e.message
+    end
+
+    begin
+      puts "UPDATE"
+      @db.execute(select_sql) do |row|
+        new_contents = remove_structure_words(row[1])
+        book_info_id = row[0]
+        @db.execute(update_sql,
+          id: book_info_id,
+          pre_processed_contents: new_contents)
+      end
+    rescue SQLite3::SQLException => e
+      puts e.message
+    end
+
+
+
+
   end
 
 end
