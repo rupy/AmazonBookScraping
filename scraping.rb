@@ -29,7 +29,7 @@ class AmazonBookScraping
   RETRY_TIME = 2
 
   #== sqlite3のDBの内容を保存するファイル名
-  DB_FILENAME = "book_info.db"
+  DB_FILENAME = "book_info.sqlite3"
 
   #
   #= 初期化
@@ -204,7 +204,10 @@ class AmazonBookScraping
           manufacturer: item.get('ItemAttributes/Manufacturer'),
           group:        item.get('ItemAttributes/ProductGroup'),
           url:          item.get('DetailPageURL'),
-          amount:       item.get('ItemAttributes/ListPrice/Amount')
+          amount:       item.get('ItemAttributes/ListPrice/Amount'),
+          image_url:    item.get('ImageSets/ImageSet/LargeImage/URL'),
+          image_height: item.get('ImageSets/ImageSet/LargeImage/Height'),
+          image_width:  item.get('ImageSets/ImageSet/LargeImage/Width'),
       }
     end
     result
@@ -255,16 +258,20 @@ class AmazonBookScraping
   def create_table
     create_table_sql = <<-SQL
 CREATE TABLE book_info (
-  id            integer PRIMARY KEY AUTOINCREMENT,
-  title         text,
-  asin          text,
-  node_id       integer,
-  browsenode    text,
-  author        text,
-  manufacturer  text,
-  url           text,
-  amount        integer,
-  contents      text
+  id                      integer PRIMARY KEY AUTOINCREMENT,
+  title                   text,
+  asin                    text,
+  node_id                 integer,
+  browsenode              text,
+  author                  text,
+  manufacturer            text,
+  url                     text,
+  amount                  integer,
+  image_url               text,
+  image_height            integer,
+  image_width             integer,
+  contents                text,
+  pre_processed_contents  text
 );
     SQL
 
@@ -283,7 +290,7 @@ CREATE TABLE book_info (
 INSERT INTO
 book_info
 VALUES
-(NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);
+(NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :image_url, :image_height, :image_width, :contents, NULL);
     SQL
 
     begin
@@ -296,7 +303,11 @@ VALUES
                  manufacturer:  book_info[:manufacturer],
                  url:           book_info[:url],
                  amount:        book_info[:amount],
-                 contents:      book_info[:contents])
+                 image_url:     book_info[:image_url],
+                 image_height:  book_info[:image_height],
+                 image_width:   book_info[:image_width],
+                 contents:      book_info[:contents],
+                 )
 
     rescue SQLite3::SQLException => e
       puts e.message
@@ -417,7 +428,10 @@ VALUES
               manufacturer:  book_info[:manufacturer],
               url:           book_info[:url],
               amount:        book_info[:amount],
-              contents:      contents
+              image_url:     book_info[:image_url],
+              image_height:  book_info[:image_height],
+              image_width:   book_info[:image_width],
+              contents:      contents,
           }
           # DBに格納
           save_data info
@@ -466,11 +480,6 @@ VALUES
 
   def pre_processing()
 
-    alter_sql = <<-SQL
-ALTER TABLE book_info 
-ADD COLUMN pre_processed_contents[text];
-    SQL
-
     select_sql = <<-SQL
 SELECT id, contents 
 FROM book_info 
@@ -482,13 +491,6 @@ UPDATE book_info
 SET pre_processed_contents = :pre_processed_contents 
 WHERE id = :id;
     SQL
-
-    begin
-      puts "DOING ALTER TABLE STEP"
-      @db.execute(alter_sql)
-    rescue SQLite3::SQLException => e
-      puts e.message
-    end
 
     begin
       puts "DOING UPDATE STEP"
