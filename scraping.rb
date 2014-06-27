@@ -31,6 +31,9 @@ class AmazonBookScraping
   #== sqlite3のDBの内容を保存するファイル名
   DB_FILENAME = "book_info.sqlite3"
 
+  #== sqlite3のテーブル名
+  DB_TABLE_NAME = "books"
+
   #
   #= 初期化
   #
@@ -260,7 +263,7 @@ class AmazonBookScraping
   #
   def create_table
     create_table_sql = <<-SQL
-CREATE TABLE book_info (
+CREATE TABLE #{DB_TABLE_NAME} (
   id                      integer PRIMARY KEY AUTOINCREMENT,
   title                   text,
   asin                    text,
@@ -291,7 +294,7 @@ CREATE TABLE book_info (
   def save_data(book_info=nil)
     insert_sql = <<-SQL
 INSERT INTO
-book_info
+#{DB_TABLE_NAME}
 VALUES
 (NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :image_url, :image_height, :image_width, :contents, NULL);
     SQL
@@ -321,7 +324,7 @@ VALUES
   #= すでにasinのものが登録されているかどうか
   #
   def already_registered?(asin)
-    select_sql = "SELECT COUNT(*) FROM book_info WHERE asin = :asin;"
+    select_sql = "SELECT COUNT(*) FROM #{DB_TABLE_NAME} WHERE asin = :asin;"
     begin
       count = @db.execute(select_sql, asin: asin)
     rescue SQLite3::SQLException => e
@@ -489,13 +492,13 @@ VALUES
   def pre_processing()
 
     select_sql = <<-SQL
-SELECT id, contents 
-FROM book_info 
+SELECT id, contents
+FROM #{DB_TABLE_NAME}
 WHERE contents <> '';
     SQL
 
     update_sql = <<-SQL
-UPDATE book_info 
+UPDATE #{DB_TABLE_NAME}
 SET pre_processed_contents = :pre_processed_contents 
 WHERE id = :id;
     SQL
