@@ -198,6 +198,9 @@ class AmazonBookScraping
     # puts resp.marshal_dump
     result = nil
     resp.items.each do |item|
+      # 画像にはSwatchImage/SmallImage/ThumbnailImage/TinyImage/MediumImage/LargeImageがある
+      # それぞれがURL/Height/Widthを持っている
+      # 今回はLargeImageのみ取得するようにしている
       result = {
           title:        item.get('ItemAttributes/Title'),
           author:       item.get_array('ItemAttributes/Author').join(", "),
@@ -467,13 +470,18 @@ VALUES
 !xi
     
     text = text
-    .strip
-    .gsub(index_rex,"")
-    .strip
-    .gsub(index_rex,"")
-    .strip
+    .strip # 前後の空白で削除できない場合がある
+    .gsub(index_rex,"") # 削除
+    .strip # 削除して前後に空白ができる可能性がある
+    .gsub(index_rex,"") # 削除
+    .strip # 削除して前後に空白ができる可能性がある
 
     text = CGI.unescapeHTML(text)
+    # Amazonの目次にはHTMLエンコードが残っている場合があるので取り除く
+    text = text
+    .gsub(/<\s*br\s*\/?\s*>/i, "\n")
+    .strip
+
     text = Sanitize.clean(text)
     text
   end
