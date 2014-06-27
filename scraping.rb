@@ -3,6 +3,7 @@
 require "amazon/ecs"
 require "open-uri"
 require 'sqlite3'
+require 'sanitize'
 
 #
 #= Amazon.comから書籍の目次を取り出すためのライブラリ
@@ -28,7 +29,7 @@ class AmazonBookScraping
   RETRY_TIME = 2
 
   #== sqlite3のDBの内容を保存するファイル名
-  DB_FILENAME = "book_info.db"
+  DB_FILENAME = "book_info.sqlite3"
 
   #
   #= 初期化
@@ -197,13 +198,19 @@ class AmazonBookScraping
     # puts resp.marshal_dump
     result = nil
     resp.items.each do |item|
+      # 画像にはSwatchImage/SmallImage/ThumbnailImage/TinyImage/MediumImage/LargeImageがある
+      # それぞれがURL/Height/Widthを持っている
+      # 今回はLargeImageのみ取得するようにしている
       result = {
           title:        item.get('ItemAttributes/Title'),
           author:       item.get_array('ItemAttributes/Author').join(", "),
           manufacturer: item.get('ItemAttributes/Manufacturer'),
           group:        item.get('ItemAttributes/ProductGroup'),
           url:          item.get('DetailPageURL'),
-          amount:       item.get('ItemAttributes/ListPrice/Amount')
+          amount:       item.get('ItemAttributes/ListPrice/Amount'),
+          image_url:    item.get('ImageSets/ImageSet/LargeImage/URL'),
+          image_height: item.get('ImageSets/ImageSet/LargeImage/Height'),
+          image_width:  item.get('ImageSets/ImageSet/LargeImage/Width'),
       }
     end
     result
@@ -254,16 +261,20 @@ class AmazonBookScraping
   def create_table
     create_table_sql = <<-SQL
 CREATE TABLE book_info (
-  id            integer PRIMARY KEY AUTOINCREMENT,
-  title         text,
-  asin          text,
-  node_id       integer,
-  browsenode    text,
-  author        text,
-  manufacturer  text,
-  url           text,
-  amount        integer,
-  contents      text
+  id                      integer PRIMARY KEY AUTOINCREMENT,
+  title                   text,
+  asin                    text,
+  node_id                 integer,
+  browsenode              text,
+  author                  text,
+  manufacturer            text,
+  url                     text,
+  amount                  integer,
+  image_url               text,
+  image_height            integer,
+  image_width             integer,
+  contents                text,
+  pre_processed_contents  text
 );
     SQL
 
@@ -282,7 +293,7 @@ CREATE TABLE book_info (
 INSERT INTO
 book_info
 VALUES
-(NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :contents);
+(NULL, :title, :asin, :node_id, :browsenode, :author, :manufacturer, :url, :amount, :image_url, :image_height, :image_width, :contents, NULL);
     SQL
 
     begin
@@ -295,7 +306,11 @@ VALUES
                  manufacturer:  book_info[:manufacturer],
                  url:           book_info[:url],
                  amount:        book_info[:amount],
-                 contents:      book_info[:contents])
+                 image_url:     book_info[:image_url],
+                 image_height:  book_info[:image_height],
+                 image_width:   book_info[:image_width],
+                 contents:      book_info[:contents],
+                 )
 
     rescue SQLite3::SQLException => e
       puts e.message
@@ -389,6 +404,7 @@ VALUES
         # first_node_idがnilならとりあえず解析を進めればいい
         # first_node_idが設定されていて，目的のノードならば解析を進める
         if first_node_id.nil? || ancestors[current_level + 1] == child_name
+          # 再帰
           store_bookinfo_from_browsenode(child_id, first_node_id, all_browsenode_path)
           # 次からはskipしない
           first_node_id = nil
@@ -396,7 +412,6 @@ VALUES
         else
           puts "skip: " + all_browsenode_path + "/" + child_name
         end
-        # 再帰
       end
     else
       # 子供がなく，末尾（葉）
@@ -416,7 +431,10 @@ VALUES
               manufacturer:  book_info[:manufacturer],
               url:           book_info[:url],
               amount:        book_info[:amount],
-              contents:      contents
+              image_url:     book_info[:image_url],
+              image_height:  book_info[:image_height],
+              image_width:   book_info[:image_width],
+              contents:      contents,
           }
           # DBに格納
           save_data info
@@ -428,6 +446,72 @@ VALUES
     end
   end
 
+  #
+  #= クラスタリングに不要な文字列を削除する前処理
+  #
+  def remove_structure_words(text)
 
+    index_rex = %r!
+(第?[0-9０-９IV一二三四五六七八九十序終]+\s*(章|節|部|話|回|週|時間目))                         #章や節の番号を除く
+|((chapter|chap|part|tip|step|ステップ|case|lesson|フェーズ|phase)\.?-?\s*\d+\.?)           # 章や節の番号を除く
+|(^\d[.:]\b)                                        #数字＋記号の文字列を除く（これも節を表すことが多い）
+|(^\d+\.\d+(\.\d+)*)                                #1.2.3などの数字も節を表すことが多い
+|(^[a-zA-Z\-]\.?\d+)                                # B.やA.2、-3も
+|(^\d+\s+)                                          # 行頭のただの文字
+|(^[0-9a-zA-Z]+-\d+)                                # 1-2-3など
+|(^I{2,}\b)                                         # IIIなど
+|(はじめに|初めに|introduction|まえがき|前書き|目次)
+|(おわりに|終わりに|最後に|さいごに|あとがき|謝辞|エピローグ|epilogue|まとめ)
+|(参考文献|索引|index|インデックス)
+|((付録|巻末資料|appendix|特集)\s*[A-Z0-9]?\b?)         # 付録
+|([　 ◆・■●【】．〔〕…※◯●：＜＞☆★]|ほか)             # 記号
+|(-{2,})                                            # 長い線
+|(^[\!-\/:-@\[-`{-~0-9\s]+)                         #記号と数字から始まる部分
+!xi
+    
+    text = text
+    .strip # 前後の空白で削除できない場合がある
+    .gsub(index_rex,"") # 削除
+    .strip # 削除して前後に空白ができる可能性がある
+    .gsub(index_rex,"") # 削除
+    .strip # 削除して前後に空白ができる可能性がある
+
+    text = CGI.unescapeHTML(text)
+    # Amazonの目次にはHTMLエンコードが残っている場合があるので取り除く
+    text = text
+    .gsub(/<\s*br\s*\/?\s*>/i, "\n")
+    .strip
+
+    text = Sanitize.clean(text)
+    text
+  end
+
+  def pre_processing()
+
+    select_sql = <<-SQL
+SELECT id, contents 
+FROM book_info 
+WHERE contents <> '';
+    SQL
+
+    update_sql = <<-SQL
+UPDATE book_info 
+SET pre_processed_contents = :pre_processed_contents 
+WHERE id = :id;
+    SQL
+
+    begin
+      puts "DOING UPDATE STEP"
+      @db.execute(select_sql) do |row|
+        new_contents = remove_structure_words(row[1])
+        book_info_id = row[0]
+        @db.execute(update_sql,
+          id: book_info_id,
+          pre_processed_contents: new_contents)
+      end
+    rescue SQLite3::SQLException => e
+      puts e.message
+    end
+  end
 
 end
