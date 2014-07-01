@@ -25,4 +25,32 @@ puts scraping.get_browsenode_ancestors(467250)
 # 465392（本）のカテゴリに対して再帰的にbrowsenodeをたどっていき，
 # 末尾のノードから得られるすべてのasinを用いて，目次を取得する
 scraping.create_table
-scraping.store_bookinfo_from_browsenode(465392, 507146)
+scraping.store_bookinfo_from_browsenode(466298)
+
+#
+# コンピュータ関連書籍の取得
+#
+scraping.create_table
+node_ids = [
+# コンピュータ・IT
+466298,
+# ビジネス・経済/IT
+492062,
+# 医療とコンピュータ
+550124,
+# コンピュータ・インターネット
+508058,
+# ビジネス・経済/eコマース
+535864,
+# コンピュータサイエンス
+492350,
+# コンピュータ・情報処理
+492356,
+# コンピュータ・モバイル
+46423011,
+]
+
+node_ids.each do |ids|
+	puts ids	
+lsscraping.store_bookinfo_from_browsenode(ids)
+end
