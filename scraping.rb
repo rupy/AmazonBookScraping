@@ -32,7 +32,7 @@ class AmazonBookScraping
   DB_FILENAME = "book_info.sqlite3"
 
   #== sqlite3のテーブル名
-  DB_TABLE_NAME = "books"
+  DB_TABLE_NAME = "book_info"
 
   #
   #= 初期化
@@ -426,7 +426,7 @@ VALUES
           book_info = get_bookinfo_by_asin(asin)
           contents = get_contents(asin)
           info = {
-              title:         book_info[:title],
+              title:         CGI.unescapeHTML(book_info[:title]),
               asin:          asin,
               node_id:       node_id,
               browsenode:    all_browsenode_path,
@@ -437,7 +437,7 @@ VALUES
               image_url:     book_info[:image_url],
               image_height:  book_info[:image_height],
               image_width:   book_info[:image_width],
-              contents:      contents,
+              contents:      CGI.unescapeHTML(contents),
           }
           # DBに格納
           save_data info
